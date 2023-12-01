@@ -2,9 +2,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -22,9 +24,9 @@ type Config struct {
 	Mappings []Mapping `yaml:"mappings"`
 }
 
-func main() {
-	configFile := "config.yaml"
+var configFile = "config.yaml"
 
+func main() {
 	config, err := readConfig(configFile)
 	if err != nil {
 		fmt.Println("Error reading configuration:", err)
@@ -34,6 +36,113 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	var wg sync.WaitGroup
+
+	for _, mapping := range config.Mappings {
+		wg.Add(1)
+		go startPortForwarding(mapping, sigCh, &wg)
+	}
+	go startHTTPServer(&config, sigCh)
+
+	wg.Wait()
+}
+
+func startHTTPServer(config *Config, sigCh chan os.Signal) {
+	http.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			getConfigHandler(w, r, config)
+		case http.MethodPost:
+			createConfigHandler(w, r, config)
+		case http.MethodPut:
+			updateConfigHandler(w, r, config)
+		case http.MethodDelete:
+			deleteConfigHandler(w, r, config)
+		default:
+			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		}
+	})
+
+	http.HandleFunc("/startBulkForwarding", func(w http.ResponseWriter, r *http.Request) {
+		go startBulkForwarding(config, sigCh)
+		fmt.Fprintln(w, "Bulk forwarding started")
+	})
+
+	http.HandleFunc("/stopBulkForwarding", func(w http.ResponseWriter, r *http.Request) {
+		sigCh <- syscall.SIGTERM
+		fmt.Fprintln(w, "Bulk forwarding stopped")
+	})
+
+	fmt.Println("HTTP server listening on :8080")
+	http.ListenAndServe(":8080", nil)
+}
+
+func getConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(config)
+}
+
+func createConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusInternalServerError)
+		return
+	}
+
+	var newConfig Config
+	err = yaml.Unmarshal(body, &newConfig)
+	if err != nil {
+		http.Error(w, "Error unmarshalling request body", http.StatusBadRequest)
+		return
+	}
+
+	*config = newConfig
+	saveConfig(*config, configFile)
+
+	fmt.Fprintln(w, "Configuration created successfully")
+}
+
+func updateConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusInternalServerError)
+		return
+	}
+
+	var updateConfig Config
+	err = yaml.Unmarshal(body, &updateConfig)
+	if err != nil {
+		http.Error(w, "Error unmarshalling request body", http.StatusBadRequest)
+		return
+	}
+
+	config.Mappings = updateConfig.Mappings
+	saveConfig(*config, configFile)
+
+	fmt.Fprintln(w, "Configuration updated successfully")
+}
+
+func deleteConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
+	config.Mappings = nil
+	saveConfig(*config, configFile)
+
+	fmt.Fprintln(w, "Configuration deleted successfully")
+}
+
+func saveConfig(config Config, filename string) {
+	data, err := yaml.Marshal(&config)
+	if err != nil {
+		fmt.Println("Error marshalling configuration:", err)
+		return
+	}
+
+	err = os.WriteFile(filename, data, 0644)
+	if err != nil {
+		fmt.Println("Error writing configuration file:", err)
+	}
+}
+
+func startBulkForwarding(config *Config, sigCh chan os.Signal) {
 	var wg sync.WaitGroup
 
 	for _, mapping := range config.Mappings {
@@ -124,7 +233,6 @@ func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 			if err == io.EOF {
 				break
 			}
-			// Ignore the specific "use of closed network connection" error
 			if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
 				break
 			}
