@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -25,6 +26,7 @@ type Config struct {
 }
 
 var configFile = "config.yaml"
+var shutdownCh = make(chan struct{})
 
 func main() {
 	config, err := readConfig(configFile)
@@ -35,6 +37,10 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		close(shutdownCh) // Signal all goroutines to start shutdown
+	}()
 
 	var wg sync.WaitGroup
 
@@ -71,6 +77,11 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 	http.HandleFunc("/stopBulkForwarding", func(w http.ResponseWriter, r *http.Request) {
 		sigCh <- syscall.SIGTERM
 		fmt.Fprintln(w, "Bulk forwarding stopped")
+	})
+
+	http.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Initiating graceful shutdown")
+		close(shutdownCh) // Trigger graceful shutdown
 	})
 
 	fmt.Println("HTTP server listening on :8080")
@@ -165,21 +176,33 @@ func startPortForwarding(mapping Mapping, sigCh chan os.Signal, wg *sync.WaitGro
 
 	fmt.Printf("Port forwarding from %s to %s\n", mapping.Remote, mapping.Local)
 
+	connCh := make(chan net.Conn)
+	errCh := make(chan error)
+
+	go func() {
+		for {
+			conn, err := localListener.Accept()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			connCh <- conn
+		}
+	}()
+
 	for {
 		select {
-		case <-sigCh:
-			fmt.Println("Received signal. Shutting down port forwarding for", mapping.Remote)
-			localListener.Close()
+		case <-shutdownCh:
+			fmt.Println("Shutting down port forwarding for", mapping.Remote)
 			return
-		default:
-			localConn, err := localListener.Accept()
-			if err != nil {
+		case err := <-errCh:
+			if !strings.Contains(err.Error(), "use of closed network connection") {
 				fmt.Printf("Error accepting local connection for %s: %s\n", mapping.Remote, err)
-				continue
 			}
-
+			return
+		case conn := <-connCh:
 			wg.Add(1)
-			go handleConnection(localConn, mapping.Remote, wg)
+			go handleConnection(conn, mapping.Remote, wg)
 		}
 	}
 }
