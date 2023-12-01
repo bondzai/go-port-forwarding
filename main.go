@@ -25,62 +25,58 @@ type Config struct {
 }
 
 func main() {
-	// Parse command line arguments
 	configFile := "config.yaml" // Default configuration file
 
-	// Read configuration from the YAML file
 	config, err := readConfig(configFile)
 	if err != nil {
 		fmt.Println("Error reading configuration:", err)
 		return
 	}
 
-	// Handle graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
 
-	// Start port forwarding for each mapping
 	for _, mapping := range config.Mappings {
 		wg.Add(1)
-		go func(mapping Mapping) {
-			defer wg.Done()
-
-			localListener, err := net.Listen("tcp", mapping.Local)
-			if err != nil {
-				fmt.Printf("Error starting local listener for %s: %s\n", mapping.Remote, err)
-				return
-			}
-			defer localListener.Close()
-
-			fmt.Printf("Port forwarding from %s to %s\n", mapping.Remote, mapping.Local)
-
-			// Accept and handle incoming connections
-			for {
-				select {
-				case <-sigCh:
-					fmt.Println("Received signal. Shutting down port forwarding for", mapping.Remote)
-					localListener.Close()
-					return
-				default:
-					localConn, err := localListener.Accept()
-					if err != nil {
-						fmt.Printf("Error accepting local connection for %s: %s\n", mapping.Remote, err)
-						continue
-					}
-
-					go handleConnection(localConn, mapping.Remote)
-				}
-			}
-		}(mapping)
+		go startPortForwarding(mapping, sigCh, &wg)
 	}
 
-	// Wait for all port forwarding instances to finish
 	wg.Wait()
 }
 
-// readConfig reads the configuration from a YAML file
+func startPortForwarding(mapping Mapping, sigCh chan os.Signal, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	localListener, err := net.Listen("tcp", mapping.Local)
+	if err != nil {
+		fmt.Printf("Error starting local listener for %s: %s\n", mapping.Remote, err)
+		return
+	}
+	defer localListener.Close()
+
+	fmt.Printf("Port forwarding from %s to %s\n", mapping.Remote, mapping.Local)
+
+	for {
+		select {
+		case <-sigCh:
+			fmt.Println("Received signal. Shutting down port forwarding for", mapping.Remote)
+			localListener.Close()
+			return
+		default:
+			localConn, err := localListener.Accept()
+			if err != nil {
+				fmt.Printf("Error accepting local connection for %s: %s\n", mapping.Remote, err)
+				continue
+			}
+
+			wg.Add(1)
+			go handleConnection(localConn, mapping.Remote, wg)
+		}
+	}
+}
+
 func readConfig(configFile string) (Config, error) {
 	var config Config
 
@@ -99,11 +95,10 @@ func readConfig(configFile string) (Config, error) {
 	return config, nil
 }
 
-// handleConnection handles the forwarding of data between local and remote connections
-func handleConnection(localConn net.Conn, remoteAddr string) {
+func handleConnection(localConn net.Conn, remoteAddr string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	defer localConn.Close()
 
-	// Connect to the remote address
 	remoteConn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
 		fmt.Println("Error connecting to remote address:", err)
@@ -111,19 +106,15 @@ func handleConnection(localConn net.Conn, remoteAddr string) {
 	}
 	defer remoteConn.Close()
 
-	// Use a WaitGroup to wait for both directions to complete
-	var wg sync.WaitGroup
-	wg.Add(2)
+	var dataCopyWg sync.WaitGroup
+	dataCopyWg.Add(2)
 
-	// Forward data between local and remote connections
-	go copyData(localConn, remoteConn, &wg)
-	go copyData(remoteConn, localConn, &wg)
+	go copyData(localConn, remoteConn, &dataCopyWg)
+	go copyData(remoteConn, localConn, &dataCopyWg)
 
-	// Wait for both directions to complete
-	wg.Wait()
+	dataCopyWg.Wait()
 }
 
-// copyData copies data bidirectionally between two connections
 func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -132,7 +123,6 @@ func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 		fmt.Println("Error copying data:", err)
 	}
 
-	// Close the destination connection if it implements io.Closer
 	if closer, ok := dst.(io.Closer); ok {
 		_ = closer.Close()
 	}
