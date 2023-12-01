@@ -39,7 +39,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
-		close(shutdownCh) // Signal all goroutines to start shutdown
+		close(shutdownCh)
 	}()
 
 	var wg sync.WaitGroup
@@ -71,7 +71,7 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 
 	http.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Initiating graceful shutdown")
-		close(shutdownCh) // Trigger graceful shutdown
+		close(shutdownCh)
 	})
 
 	fmt.Println("HTTP server listening on :8080")
