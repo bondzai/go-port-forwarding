@@ -1,0 +1,8 @@
+{
+    "WorkingDir": ".",
+    "SourceDir": ["."],
+    "SourceExt": [".c", ".cpp", ".go", ".h"],
+    "BuildCmd": "go build -o bin/go-port-forwarding ./cmd/main.go",
+    "RunCmd": "./bin/go-port-forwarding",
+    "Decreasing": 1
+}
