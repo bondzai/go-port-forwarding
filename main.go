@@ -13,19 +13,17 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Mapping represents a single remote-to-local port mapping
 type Mapping struct {
 	Remote string `yaml:"remote"`
 	Local  string `yaml:"local"`
 }
 
-// Config represents the overall configuration structure
 type Config struct {
 	Mappings []Mapping `yaml:"mappings"`
 }
 
 func main() {
-	configFile := "config.yaml" // Default configuration file
+	configFile := "config.yaml"
 
 	config, err := readConfig(configFile)
 	if err != nil {
@@ -118,13 +116,12 @@ func handleConnection(localConn net.Conn, remoteAddr string, wg *sync.WaitGroup)
 func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	buffer := make([]byte, 4096) // Buffer to read data in chunks
+	buffer := make([]byte, 4096)
 
 	for {
 		n, err := src.Read(buffer)
 		if err != nil {
 			if err == io.EOF {
-				// If EOF is reached, break out of the loop
 				break
 			}
 			// Ignore the specific "use of closed network connection" error
@@ -137,12 +134,10 @@ func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 
 		_, err = dst.Write(buffer[:n])
 		if err != nil {
-			// Log the error but don't break the loop
 			fmt.Println("Error writing data:", err)
 		}
 	}
 
-	// Close the destination connection if it implements io.Closer
 	if closer, ok := dst.(io.Closer); ok {
 		_ = closer.Close()
 	}
