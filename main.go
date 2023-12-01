@@ -118,11 +118,31 @@ func handleConnection(localConn net.Conn, remoteAddr string, wg *sync.WaitGroup)
 func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	_, err := io.Copy(dst, src)
-	if err != nil {
-		fmt.Println("Error copying data:", err)
+	buffer := make([]byte, 4096) // Buffer to read data in chunks
+
+	for {
+		n, err := src.Read(buffer)
+		if err != nil {
+			if err == io.EOF {
+				// If EOF is reached, break out of the loop
+				break
+			}
+			// Ignore the specific "use of closed network connection" error
+			if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
+				break
+			}
+			fmt.Println("Error reading data:", err)
+			break
+		}
+
+		_, err = dst.Write(buffer[:n])
+		if err != nil {
+			// Log the error but don't break the loop
+			fmt.Println("Error writing data:", err)
+		}
 	}
 
+	// Close the destination connection if it implements io.Closer
 	if closer, ok := dst.(io.Closer); ok {
 		_ = closer.Close()
 	}
