@@ -69,11 +69,6 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 		}
 	})
 
-	http.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
-		go startBulkForwarding(config, sigCh)
-		fmt.Fprintln(w, "Bulk forwarding started")
-	})
-
 	http.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Initiating graceful shutdown")
 		close(shutdownCh) // Trigger graceful shutdown
@@ -146,17 +141,6 @@ func saveConfig(config Config, filename string) {
 	if err != nil {
 		fmt.Println("Error writing configuration file:", err)
 	}
-}
-
-func startBulkForwarding(config *Config, sigCh chan os.Signal) {
-	var wg sync.WaitGroup
-
-	for _, mapping := range config.Mappings {
-		wg.Add(1)
-		go startPortForwarding(mapping, sigCh, &wg)
-	}
-
-	wg.Wait()
 }
 
 func startPortForwarding(mapping Mapping, sigCh chan os.Signal, wg *sync.WaitGroup) {
