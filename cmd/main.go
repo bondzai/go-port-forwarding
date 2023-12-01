@@ -69,14 +69,9 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 		}
 	})
 
-	http.HandleFunc("/startBulkForwarding", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
 		go startBulkForwarding(config, sigCh)
 		fmt.Fprintln(w, "Bulk forwarding started")
-	})
-
-	http.HandleFunc("/stopBulkForwarding", func(w http.ResponseWriter, r *http.Request) {
-		sigCh <- syscall.SIGTERM
-		fmt.Fprintln(w, "Bulk forwarding stopped")
 	})
 
 	http.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
