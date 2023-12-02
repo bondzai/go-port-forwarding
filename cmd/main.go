@@ -83,8 +83,14 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 		close(shutdownCh)
 	})
 
+	http.HandleFunc("/", rootHandler)
+
 	fmt.Println("HTTP server listening on :8080")
 	http.ListenAndServe(":8080", nil)
+}
+
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "Server is running...")
 }
 
 func getConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
