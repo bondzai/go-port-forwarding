@@ -100,7 +100,7 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, config *Config)
 	}
 
 	var updateConfig Config
-	err = yaml.Unmarshal(body, &updateConfig)
+	err = json.Unmarshal(body, &updateConfig)
 	if err != nil {
 		http.Error(w, "Error unmarshalling request body", http.StatusBadRequest)
 		return
