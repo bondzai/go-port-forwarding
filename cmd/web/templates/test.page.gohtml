@@ -49,10 +49,8 @@
             sent.innerHTML ="get request";
             received.innerHTML = JSON.stringify(data, undefined, 4);
             if (data.error) {
-                console.log(data.message);
-            } else {
-                output.innerHTML += `<br><strong>Response from broker service</strong>: ${data.message}`;
-            }
+                console.log(data.error);
+            } 
         })
         .catch((error) => {
             output.innerHTML += "<br><br>Eror: " + error;
