@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +28,14 @@ type Config struct {
 var configFile = "config.yaml"
 var shutdownCh = make(chan struct{})
 
+var once sync.Once
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4096)
+	},
+}
+
 func main() {
 	config, err := readConfig(configFile)
 	if err != nil {
@@ -47,6 +56,11 @@ func main() {
 		wg.Add(1)
 		go startPortForwarding(mapping, sigCh, &wg)
 	}
+
+	once.Do(func() {
+		log.Println("HTTP server listening on :8080")
+	})
+
 	go startHTTPServer(&config, sigCh)
 
 	wg.Wait()
@@ -226,7 +240,8 @@ func handleConnection(localConn net.Conn, remoteAddr string, wg *sync.WaitGroup)
 func copyData(dst io.Writer, src io.Reader, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	buffer := make([]byte, 4096)
+	buffer := bufferPool.Get().([]byte)
+	defer bufferPool.Put(&buffer)
 
 	for {
 		n, err := src.Read(buffer)
