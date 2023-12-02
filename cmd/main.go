@@ -71,12 +71,8 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 		switch r.Method {
 		case http.MethodGet:
 			getConfigHandler(w, r, config)
-		case http.MethodPost:
-			createConfigHandler(w, r, config)
 		case http.MethodPut:
 			updateConfigHandler(w, r, config)
-		case http.MethodDelete:
-			deleteConfigHandler(w, r, config)
 		default:
 			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		}
@@ -94,26 +90,6 @@ func startHTTPServer(config *Config, sigCh chan os.Signal) {
 func getConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(config)
-}
-
-func createConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1048576))
-	if err != nil {
-		http.Error(w, "Error reading request body", http.StatusInternalServerError)
-		return
-	}
-
-	var newConfig Config
-	err = yaml.Unmarshal(body, &newConfig)
-	if err != nil {
-		http.Error(w, "Error unmarshalling request body", http.StatusBadRequest)
-		return
-	}
-
-	*config = newConfig
-	saveConfig(*config, configFile)
-
-	fmt.Fprintln(w, "Configuration created successfully")
 }
 
 func updateConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
@@ -134,13 +110,6 @@ func updateConfigHandler(w http.ResponseWriter, r *http.Request, config *Config)
 	saveConfig(*config, configFile)
 
 	fmt.Fprintln(w, "Configuration updated successfully")
-}
-
-func deleteConfigHandler(w http.ResponseWriter, r *http.Request, config *Config) {
-	config.Mappings = nil
-	saveConfig(*config, configFile)
-
-	fmt.Fprintln(w, "Configuration deleted successfully")
 }
 
 func saveConfig(config Config, filename string) {
