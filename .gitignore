@@ -15,3 +15,5 @@ bin/
 # custom ignore
 *.env
 *.zip
+
+*config.yaml
